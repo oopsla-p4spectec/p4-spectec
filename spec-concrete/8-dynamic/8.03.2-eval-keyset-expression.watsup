@@ -1,0 +1,216 @@
+;;
+;; Match
+;;
+
+dec $match_keysets(setValue*, value*) : bool
+  hint(prose_true %1 "matches" %0)
+  hint(prose_false %1 "does not match" %0)
+dec $match_keyset(setValue, value) : bool
+
+def $match_keysets(eps, eps) = true
+def $match_keysets(SET `{ `... }, value_key*) = true
+def $match_keysets(setValue, value_key) = $match_keyset(setValue, value_key)
+  -- if setValue =/= SET `{ `... }
+def $match_keysets(setValue_h :: setValue_t*, value_key_h :: value_key_t*)
+  = $match_keysets(setValue_t*, value_key_t*)
+  -- if setValue_t* =/= eps
+  -- if value_key_t* =/= eps
+  -- if $match_keyset(setValue_h, value_key_h)
+def $match_keysets(setValue_h :: setValue_t*, value_key_h :: value_key_t*)
+  = false
+  -- if setValue_t* =/= eps
+  -- if value_key_t* =/= eps
+  -- if ~$match_keyset(setValue_h, value_key_h)
+
+def $match_keyset(SET `{ `... }, value_key) = true
+def $match_keyset(SET `{ value }, value_key) = $bin_eq(value, value_key)
+def $match_keyset(SET `{ value* `( _ ) }, value_key)
+  = $exists_($bin_eq(value, value_key)*)
+def $match_keyset(SET `{ value_base `&&& value_mask }, value_key)
+  = $bin_eq(
+      $bin_band(value_base, value_mask),
+      $bin_band(value_key, value_mask))
+def $match_keyset(SET `{ value_base `.. value_limit }, value_key)
+  = $bin_le(value_base, value_key)
+    /\ $bin_le(value_key, value_limit)
+
+;;
+;; Simple keyset expression evaluation
+;;
+;; syntax simpleKeysetExpressionIR
+;;
+
+syntax simpleKeysetExpressionResult =
+  | continueResult<setValue>
+  | abortResult
+
+relation Expr_eval_keyset_simple:
+  evalContext arch |- simpleKeysetExpressionIR
+                    : evalContext arch simpleKeysetExpressionResult
+  hint(input %0 %1 %2)
+
+;;; typedExpressionIR
+
+rulegroup Expr_eval_keyset_simple/typedExpressionIR {
+
+  rule Expr_eval_keyset_simple/abort:
+    EC_0 ARCH_0 |- typedExpressionIR : EC_1 ARCH_1 abortResult
+    -- Expr_eval:
+        LOCAL EC_0 ARCH_0 |- typedExpressionIR
+                           : EC_1 ARCH_1 abortResult
+
+  rule Expr_eval_keyset_simple/cont-setValue:
+    EC_0 ARCH_0 |- typedExpressionIR : EC_1 ARCH_1 (`` setValue)
+    -- Expr_eval:
+        LOCAL EC_0 ARCH_0 |- typedExpressionIR
+                           : EC_1 ARCH_1 (`` setValue)
+
+  rule Expr_eval_keyset_simple/cont-objectReferenceValue:
+    EC_0 ARCH_0 |- typedExpressionIR : EC_1 ARCH_1 (`` setValue)
+    -- Expr_eval:
+        LOCAL EC_0 ARCH_0 |- typedExpressionIR
+                           : EC_1 ARCH_1 (`` (REF objectId))
+    -- if VALUE_SET `{ value* `( n_size ) }
+        = $find_object_e(ARCH_1, objectId)
+    -- if setValue = SET `{ value* `( n_size ) }
+
+}
+
+;;; typedExpressionIR `&&& typedExpressionIR
+
+rulegroup Expr_eval_keyset_simple/mask {
+
+  rule Expr_eval_keyset_simple/left-abort:
+    EC_0 ARCH_0 |- typedExpressionIR_l `&&& typedExpressionIR_r
+                 : EC_1 ARCH_1 abortResult
+    -- Expr_eval:
+        LOCAL EC_0 ARCH_0 |- typedExpressionIR_l
+                           : EC_1 ARCH_1 abortResult
+
+  rule Expr_eval_keyset_simple/left-cont-right-abort:
+    EC_0 ARCH_0 |- typedExpressionIR_l `&&& typedExpressionIR_r
+                 : EC_2 ARCH_2 abortResult
+    -- Expr_eval:
+        LOCAL EC_0 ARCH_0 |- typedExpressionIR_l
+                           : EC_1 ARCH_1 (`` value_l)
+    -- Expr_eval:
+        LOCAL EC_1 ARCH_1 |- typedExpressionIR_r
+                           : EC_2 ARCH_2 abortResult
+
+  rule Expr_eval_keyset_simple/left-cont-right-cont:
+    EC_0 ARCH_0 |- typedExpressionIR_l `&&& typedExpressionIR_r
+                 : EC_2 ARCH_2 (`` setValue)
+    -- Expr_eval:
+        LOCAL EC_0 ARCH_0 |- typedExpressionIR_l
+                           : EC_1 ARCH_1 (`` value_l)
+    -- Expr_eval:
+        LOCAL EC_1 ARCH_1 |- typedExpressionIR_r
+                           : EC_2 ARCH_2 (`` value_r)
+    -- if setValue = SET `{ value_l `&&& value_r }
+
+}
+
+;;; typedExpressionIR `.. typedExpressionIR
+
+rulegroup Expr_eval_keyset_simple/range {
+
+  rule Expr_eval_keyset_simple/left-abort:
+    EC_0 ARCH_0 |- typedExpressionIR_l `.. typedExpressionIR_r
+                 : EC_1 ARCH_1 abortResult
+    -- Expr_eval:
+        LOCAL EC_0 ARCH_0 |- typedExpressionIR_l
+                           : EC_1 ARCH_1 abortResult
+
+  rule Expr_eval_keyset_simple/left-cont-right-abort:
+    EC_0 ARCH_0 |- typedExpressionIR_l `.. typedExpressionIR_r
+                 : EC_2 ARCH_2 abortResult
+    -- Expr_eval:
+        LOCAL EC_0 ARCH_0 |- typedExpressionIR_l
+                           : EC_1 ARCH_1 (`` value_l)
+    -- Expr_eval:
+        LOCAL EC_1 ARCH_1 |- typedExpressionIR_r
+                           : EC_2 ARCH_2 abortResult
+
+  rule Expr_eval_keyset_simple/left-cont-right-cont:
+    EC_0 ARCH_0 |- typedExpressionIR_l `.. typedExpressionIR_r
+                 : EC_2 ARCH_2 (`` setValue)
+    -- Expr_eval:
+        LOCAL EC_0 ARCH_0 |- typedExpressionIR_l
+                           : EC_1 ARCH_1 (`` value_l)
+    -- Expr_eval:
+        LOCAL EC_1 ARCH_1 |- typedExpressionIR_r
+                           : EC_2 ARCH_2 (`` value_r)
+    -- if setValue = SET `{ value_l `.. value_r }
+
+}
+
+;;; DEFAULT | `_
+
+rule Expr_eval_keyset_simple/default-any:
+  EC ARCH |- simpleKeysetExpressionIR : EC ARCH (`` setValue)
+  -- if simpleKeysetExpressionIR
+      = DEFAULT \/ simpleKeysetExpressionIR = `_
+  -- if setValue = SET `{ `... }
+
+;;
+;; Simple keyset expression list evaluation
+;;
+;; syntax simpleKeysetExpressionListIR
+;;
+
+relation Exprs_eval_keyset_simple:
+  evalContext arch |- simpleKeysetExpressionListIR
+                    : evalContext arch keysetExpressionResult
+  hint(input %0 %1 %2)
+ 
+rulegroup Exprs_eval_keyset_simple {
+
+  rule Exprs_eval_keyset_simple/nil:
+    EC ARCH |- eps : EC ARCH (`` eps)
+
+  rule Exprs_eval_keyset_simple/cons-head-abort:
+    EC_0 ARCH_0 |- simpleKeysetExpressionIR_h :: simpleKeysetExpressionIR_t*
+                 : EC_1 ARCH_1 abortResult
+    -- Expr_eval_keyset_simple:
+        EC_0 ARCH_0 |- simpleKeysetExpressionIR_h
+                    : EC_1 ARCH_1 abortResult
+
+  rule Exprs_eval_keyset_simple/cons-head-cont-tail-abort:
+    EC_0 ARCH_0 |- simpleKeysetExpressionIR_h :: simpleKeysetExpressionIR_t*
+                 : EC_2 ARCH_2 abortResult
+    -- Expr_eval_keyset_simple:
+        EC_0 ARCH_0 |- simpleKeysetExpressionIR_h
+                     : EC_1 ARCH_1 (`` setValue_h)
+    -- Exprs_eval_keyset_simple:
+        EC_1 ARCH_1 |- simpleKeysetExpressionIR_t*
+                     : EC_2 ARCH_2 abortResult
+
+  rule Exprs_eval_keyset_simple/cons-head-cont-tail-cont:
+    EC_0 ARCH_0 |- simpleKeysetExpressionIR_h :: simpleKeysetExpressionIR_t*
+                 : EC_2 ARCH_2 keysetExpressionResult
+    -- Expr_eval_keyset_simple:
+        EC_0 ARCH_0 |- simpleKeysetExpressionIR_h
+                     : EC_1 ARCH_1 (`` setValue_h)
+    -- Exprs_eval_keyset_simple:
+        EC_1 ARCH_1 |- simpleKeysetExpressionIR_t*
+                     : EC_2 ARCH_2 (`` setValue_t*)
+    -- if keysetExpressionResult = `` (setValue_h :: setValue_t*)
+
+}
+
+;;
+;; Keyset expression evaluation
+;;
+;; syntax keysetExpressionIR
+;;
+
+rule Expr_eval_keyset:
+  EC_0 ARCH_0 |- keysetExpressionIR
+               : EC_1 ARCH_1 keysetExpressionResult
+  ---- ;; flatten keyset expression
+  -- if simpleKeysetExpressionListIR
+      = $flatten_keysetExpressionIR(keysetExpressionIR)
+  ---- ;; evaluate simple keyset expression list
+  -- Exprs_eval_keyset_simple:
+      EC_0 ARCH_0 |- simpleKeysetExpressionListIR
+                   : EC_1 ARCH_1 keysetExpressionResult
